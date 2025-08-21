@@ -20,7 +20,7 @@ const CHANNELS = {
   sher: {
     id: '@sher_khoub',
     name: 'کانال شعر خوب نوش',
-    signature: 'شعر خوب نوش جان کن ❤️🌹🌸'
+    signature: 'شعر خوب نوش جان کن ❤️🌹🌸\n\n📌 @sher_khoub'
   },
   ahlolbeyt: {
     id: '@ahlolbeytmedia',
@@ -31,15 +31,19 @@ const CHANNELS = {
     id: '@sexzanashuoei',
     name: 'عاشقانه های زناشویی',
     signature: 'خوش رابطه باشید ❤️\n\n📌 @sexzanashuoei',
-    sticker: 'CAACAgIAAxkBAAEL2kRl7LQx9s7q5JZ9m3y5s1r7u8u57AAC7gQAAnlcTRg3rAcIu58V3DQE'
+    sticker: 'CAACAgIAAxkBAAEL2kRl7LQx9s7q5JZ9m3y5s1r7u8u57AAC7gQAAnlcTRg3rAcIu58V3DQE' // استیکر قلب قرمز
   }
 };
 
 // کانال پیش‌فرض
 let TARGET_CHANNEL = CHANNELS.sher;
 
+// صف ارسال پیام و پردازش
+const messageQueue = [];
+let isProcessing = false;
+
 // ———————————————————
-// وب‌سرور (فقط برای Render — بدون این، خطای پورت می‌دهد)
+// وب‌سرور (فقط برای Render — ضروری برای تشخیص پورت)
 // ———————————————————
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -48,7 +52,7 @@ app.get('/', (req, res) => {
   res.send(`
     <h3>ربات مدیریت چندکاناله فعال است</h3>
     <p><b>کانال مقصد فعلی:</b> ${TARGET_CHANNEL.name}</p>
-    <p><b>توکن:</b> ${BOT_TOKEN.slice(0, 10)}...</p>
+    <p><b>وضعیت صف:</b> ${messageQueue.length} پیام در صف</p>
   `);
 });
 
@@ -139,7 +143,43 @@ function cleanText(text) {
 }
 
 // ———————————————————
-// دریافت پیام و ارسال به کانال مقصد
+// صف ارسال پیام (جلوگیری از Too Many Requests)
+// ———————————————————
+async function processQueue() {
+  if (isProcessing || messageQueue.length === 0) return;
+  isProcessing = true;
+
+  const task = messageQueue[0]; // اولین پیام صف
+
+  try {
+    await task.send(); // ارسال به کانال مقصد
+
+    // حذف پیام ربات و پیام مدیر پس از ارسال موفق
+    await bot.telegram.deleteMessage(task.ctx.chat.id, task.botMsg.message_id).catch(() => {});
+    await bot.telegram.deleteMessage(task.ctx.chat.id, task.ctx.message.message_id).catch(() => {});
+
+  } catch (err) {
+    if (err.description && err.description.includes('Too Many Requests')) {
+      const retryAfter = err.parameters?.retry_after || 10;
+      console.log(`❌ Too Many Requests — تلاش مجدد پس از ${retryAfter} ثانیه`);
+      setTimeout(() => processQueue(), retryAfter * 1000);
+      isProcessing = false;
+      return;
+    } else {
+      console.error('Error:', err);
+      await task.ctx.reply(`❌ خطا در ارسال: ${err.description}`);
+    }
+  }
+
+  messageQueue.shift(); // حذف از صف
+  isProcessing = false;
+
+  // ارسال بعدی پس از 10 ثانیه
+  setTimeout(processQueue, 10000);
+}
+
+// ———————————————————
+// دریافت پیام و اضافه به صف
 // ———————————————————
 bot.on('message', async (ctx) => {
   const fromId = ctx.from.id;
@@ -153,16 +193,17 @@ bot.on('message', async (ctx) => {
     return;
   }
 
-  try {
-    const caption = ctx.message.caption || '';
-    const text = ctx.message.text || '';
+  const caption = ctx.message.caption || '';
+  const textOnly = ctx.message.text || '';
 
-    const cleanedCaption = cleanText(caption);
-    const cleanedTextOnly = cleanText(text);
+  const cleanedCaption = cleanText(caption);
+  const cleanedTextOnly = cleanText(textOnly);
 
+  // تابع ارسال (به صف اضافه می‌شود)
+  const sendTask = async () => {
     if (ctx.message.text) {
       const finalText = cleanedTextOnly + '\n\n' + TARGET_CHANNEL.signature;
-      await ctx.telegram.sendMessage(TARGET_CHANNEL.id, finalText, {
+      return ctx.telegram.sendMessage(TARGET_CHANNEL.id, finalText, {
         parse_mode: 'HTML',
         disable_web_page_preview: false
       });
@@ -170,65 +211,67 @@ bot.on('message', async (ctx) => {
     else if (ctx.message.photo) {
       const photo = ctx.message.photo.pop();
       const finalCaption = (cleanedCaption + '\n\n' + TARGET_CHANNEL.signature).trim();
-      await ctx.telegram.sendPhoto(TARGET_CHANNEL.id, photo.file_id, {
+      return ctx.telegram.sendPhoto(TARGET_CHANNEL.id, photo.file_id, {
         caption: finalCaption,
         parse_mode: 'HTML'
       });
     } 
     else if (ctx.message.video) {
       const finalCaption = (cleanedCaption + '\n\n' + TARGET_CHANNEL.signature).trim();
-      await ctx.telegram.sendVideo(TARGET_CHANNEL.id, ctx.message.video.file_id, {
+      return ctx.telegram.sendVideo(TARGET_CHANNEL.id, ctx.message.video.file_id, {
         caption: finalCaption,
         parse_mode: 'HTML'
       });
     } 
     else if (ctx.message.document) {
       const finalCaption = (cleanedCaption + '\n\n' + TARGET_CHANNEL.signature).trim();
-      await ctx.telegram.sendDocument(TARGET_CHANNEL.id, ctx.message.document.file_id, {
+      return ctx.telegram.sendDocument(TARGET_CHANNEL.id, ctx.message.document.file_id, {
         caption: finalCaption,
         parse_mode: 'HTML'
       });
     } 
     else if (ctx.message.audio) {
       const finalCaption = (cleanedCaption + '\n\n' + TARGET_CHANNEL.signature).trim();
-      await ctx.telegram.sendAudio(TARGET_CHANNEL.id, ctx.message.audio.file_id, {
+      return ctx.telegram.sendAudio(TARGET_CHANNEL.id, ctx.message.audio.file_id, {
         caption: finalCaption,
         parse_mode: 'HTML'
       });
     } 
     else if (ctx.message.animation) {
       const finalCaption = (cleanedCaption + '\n\n' + TARGET_CHANNEL.signature).trim();
-      await ctx.telegram.sendAnimation(TARGET_CHANNEL.id, ctx.message.animation.file_id, {
+      return ctx.telegram.sendAnimation(TARGET_CHANNEL.id, ctx.message.animation.file_id, {
         caption: finalCaption,
         parse_mode: 'HTML'
       });
     } 
     else if (ctx.message.voice) {
       const finalCaption = (cleanedCaption + '\n\n' + TARGET_CHANNEL.signature).trim();
-      await ctx.telegram.sendVoice(TARGET_CHANNEL.id, ctx.message.voice.file_id, {
+      return ctx.telegram.sendVoice(TARGET_CHANNEL.id, ctx.message.voice.file_id, {
         caption: finalCaption,
         parse_mode: 'HTML'
       });
     } 
     else if (ctx.message.sticker) {
       await ctx.telegram.sendSticker(TARGET_CHANNEL.id, ctx.message.sticker.file_id);
-      await ctx.telegram.sendMessage(TARGET_CHANNEL.id, TARGET_CHANNEL.signature, {
+      return ctx.telegram.sendMessage(TARGET_CHANNEL.id, TARGET_CHANNEL.signature, {
         parse_mode: 'HTML'
       });
-    } 
-    else {
-      return ctx.reply('⚠️ نوع محتوا پشتیبانی نمی‌شود.');
     }
+  };
 
-    // ارسال استیکر قلب قرمز برای کانال عاشقانه
-    if (TARGET_CHANNEL.id === '@sexzanashuoei' && TARGET_CHANNEL.sticker) {
-      await ctx.telegram.sendSticker(TARGET_CHANNEL.id, TARGET_CHANNEL.sticker);
-    }
+  // ارسال پیام تأیید و ذخیره آن
+  const botMsg = await ctx.reply('⏳ در صف ارسال قرار گرفت...');
 
-    await ctx.reply(`✅ پیام به کانال "${TARGET_CHANNEL.name}" ارسال شد.`);
-  } catch (err) {
-    console.error('Error:', err);
-    await ctx.reply(`❌ خطا: ${err.description || 'ارسال نشد.'}`);
+  // اضافه به صف
+  messageQueue.push({
+    ctx,
+    send: sendTask,
+    botMsg
+  });
+
+  // شروع پردازش صف (اگر در حال پردازش نباشد)
+  if (!isProcessing && messageQueue.length === 1) {
+    setTimeout(processQueue, 1000);
   }
 });
 
@@ -237,7 +280,7 @@ bot.on('message', async (ctx) => {
 // ———————————————————
 bot.launch().then(() => {
   console.log('🤖 ربات فعال شد.');
-  console.log('🎯 کانال پیش‌فرض:', TARGET_CHANNEL.id);
+  console.log('🎯 کانال پیش‌فرض:', TARGET_CHANNEL.name);
 });
 
 process.on('SIGINT', () => bot.stop('SIGINT'));
