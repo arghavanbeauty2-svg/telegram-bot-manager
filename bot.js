@@ -20,17 +20,17 @@ const CHANNELS = {
   sher: {
     id: '@sher_khoub',
     name: 'کانال شعر خوب نوش',
-    signature: 'شعر خوب نوش جان کن ❤️🌹🌸\n\n📌 @sher_khoub'
+    signature: 'عشق را  خوب نوش جان کن ❤️🌹🌸\n\n📌 @sher_khoub'
   },
   ahlolbeyt: {
     id: '@ahlolbeytmedia',
     name: 'کانال اهل البیت',
-    signature: 'عشق به اهل بیت ❤️\n\n📌 @ahlolbeytmedia'
+    signature: 'به عشق سه ساله امام حسین صلوات ❤️\n\n📌 @ahlolbeytmedia'
   },
   sex: {
     id: '@sexzanashuoei',
     name: 'عاشقانه های زناشویی',
-    signature: 'خوش رابطه باشید ❤️\n\n📌 @sexzanashuoei',
+    signature: 'خوش رابطه و پر باشید ❤️\n\n📌 @sexzanashuoei',
     sticker: 'CAACAgIAAxkBAAEL2kRl7LQx9s7q5JZ9m3y5s1r7u8u57AAC7gQAAnlcTRg3rAcIu58V3DQE' // استیکر قلب قرمز
   }
 };
